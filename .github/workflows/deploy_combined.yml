@@ -1,0 +1,79 @@
+name: Deploy Combined to GitHub Pages
+
+on:
+    workflow_run:
+      workflows: ["Publish Docs"]
+      types: [completed]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  actions: read
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment:
+        name: github-pages
+        url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar herramientas necesarias  
+        run: |
+            sudo apt-get update
+            sudo apt-get install -y gh jq
+
+      - name: Descargar artefactos de DocFx
+        uses: actions/download-artifact@v4
+        with:
+            name: docfx-docs
+            path: temp/docfx
+            github-token: ${{ secrets.GITHUB_TOKEN }}
+            repository: ${{ github.repository }}
+            run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Descargar semgrep-report via gh
+        env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+            run_id=$(gh run list \
+            --workflow "Semgrep Analysis" \
+            --branch main \
+            --limit 5 \
+            --json databaseId,conclusion \
+            --jq '.[] | select(.conclusion=="success") | .databaseId' \
+            | head -n1)
+
+            if [ -z "$run_id" ]; then
+            echo "No successful Semgrep Analysis run found" >&2
+            exit 1
+            fi
+
+            echo "Downloading semgrep-report from run $run_id"
+            gh run download "$run_id" \
+            --name semgrep-report \
+            --dir temp/semgrep
+
+      - name: Unificar contenido para GitHub Pages
+        run: |
+            mkdir -p public/docs
+            mkdir -p public/semgrep
+            cp -r temp/docfx/* public/docs/
+            cp -r temp/semgrep/* public/semgrep/
+
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v3
+
+      - name: Subir artifact para GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./public
+
+      - name: Desplegar en GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

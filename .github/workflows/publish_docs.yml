@@ -1,0 +1,39 @@
+name: Publish Docs
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+
+      - name: Install DocFx tool
+        run: dotnet tool install -g docfx
+
+      - name: Add dotnet tools to PATH
+        run: echo "${HOME}/.dotnet/tools" >> $GITHUB_PATH
+
+      - name: Generar metadata de DocFx
+        run: docfx metadata Bank/docfx.json
+
+      - name: Build de documentación
+        run: docfx build Bank/docfx.json
+
+      - name: Subir artefacto de documentación
+        uses: actions/upload-artifact@v4
+        with:
+          name: docfx-docs
+          path: Bank/_site
